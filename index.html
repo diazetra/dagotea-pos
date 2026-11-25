@@ -273,6 +273,59 @@
         deferredPrompt = null;
         installBar.classList.add('hidden');
       });
+
+      // Top-level PWA audio fallback relay (handles cross-origin iframe autoplay blocks)
+      var topCtx = null;
+      function unlockTopAudio() {
+        try {
+          var Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) {
+            if (!topCtx) topCtx = new Ctx();
+            if (topCtx.state === 'suspended') topCtx.resume().catch(function () {});
+          }
+        } catch (e) {}
+      }
+      document.addEventListener('pointerdown', unlockTopAudio, { passive: true });
+      window.addEventListener('message', function (ev) {
+        var d = ev && ev.data;
+        if (!d || d.type !== 'DAGOTEA_ORDER_ALERT') return;
+        try {
+          if (navigator.vibrate) navigator.vibrate([220, 110, 220]);
+        } catch (v) {}
+        if (d.audioBlocked) {
+          try {
+            unlockTopAudio();
+            if (topCtx && topCtx.state === 'running') {
+              var now = topCtx.currentTime;
+              var notes = [
+                { f: 880, t: 0.0, d: 0.24 },
+                { f: 1174.66, t: 0.18, d: 0.32 },
+                { f: 880, t: 0.56, d: 0.24 },
+                { f: 1174.66, t: 0.74, d: 0.36 }
+              ];
+              for (var i = 0; i < notes.length; i++) {
+                var osc = topCtx.createOscillator();
+                var gain = topCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(notes[i].f, now + notes[i].t);
+                gain.gain.setValueAtTime(0.001, now + notes[i].t);
+                gain.gain.exponentialRampToValueAtTime(0.9, now + notes[i].t + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + notes[i].t + notes[i].d);
+                osc.connect(gain);
+                gain.connect(topCtx.destination);
+                osc.start(now + notes[i].t);
+                osc.stop(now + notes[i].t + notes[i].d + 0.02);
+              }
+            }
+            if (d.spoken && window.speechSynthesis) {
+              var u = new SpeechSynthesisUtterance(d.spoken);
+              u.lang = 'id-ID';
+              u.volume = 1.0;
+              window.speechSynthesis.speak(u);
+            }
+          } catch (err) {}
+        }
+      });
     })();
   </script>
 </body>
